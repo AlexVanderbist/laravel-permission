@@ -2,45 +2,35 @@
 
 namespace Spatie\Permission;
 
-use Log;
 use Exception;
+use Illuminate\Support\Collection;
+use Illuminate\Contracts\Logging\Log;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Contracts\Cache\Repository;
 use Spatie\Permission\Contracts\Permission;
 
 class PermissionRegistrar
 {
-    /**
-     * @var Gate
-     */
+    /** @var \Illuminate\Contracts\Auth\Access\Gate */
     protected $gate;
 
-    /**
-     * @var Repository
-     */
+    /** @var \Illuminate\Contracts\Cache\Repository */
     protected $cache;
 
-    /**
-     * @var string
-     */
+    /** @var \Illuminate\Contracts\Logging\Log */
+    protected $logger;
+
+    /** @var string */
     protected $cacheKey = 'spatie.permission.cache';
 
-    /**
-     * @param Gate       $gate
-     * @param Repository $cache
-     */
-    public function __construct(Gate $gate, Repository $cache)
+    public function __construct(Gate $gate, Repository $cache, Log $logger)
     {
         $this->gate = $gate;
         $this->cache = $cache;
+        $this->logger = $logger;
     }
 
-    /**
-     *  Register the permissions.
-     *
-     * @return bool
-     */
-    public function registerPermissions()
+    public function registerPermissions(): bool
     {
         try {
             $this->getPermissions()->map(function ($permission) {
@@ -51,31 +41,31 @@ class PermissionRegistrar
 
             return true;
         } catch (Exception $exception) {
-            Log::alert(
-                "Could not register permissions because {$exception->getMessage()}".PHP_EOL
-                .$exception->getTraceAsString());
+            if ($this->shouldLogException()) {
+                $this->logger->alert(
+                    "Could not register permissions because {$exception->getMessage()}".PHP_EOL.
+                    $exception->getTraceAsString()
+                );
+            }
 
             return false;
         }
     }
 
-    /**
-     *  Forget the cached permissions.
-     */
     public function forgetCachedPermissions()
     {
         $this->cache->forget($this->cacheKey);
     }
 
-    /**
-     * Get the current permissions.
-     *
-     * @return \Illuminate\Database\Eloquent\Collection
-     */
-    protected function getPermissions()
+    public function getPermissions(): Collection
     {
-        return $this->cache->rememberForever($this->cacheKey, function () {
+        return $this->cache->remember($this->cacheKey, config('permission.cache_expiration_time'), function () {
             return app(Permission::class)->with('roles')->get();
         });
+    }
+
+    protected function shouldLogException(): bool
+    {
+        return config('permission.log_registration_exception');
     }
 }

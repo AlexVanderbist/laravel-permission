@@ -9,86 +9,108 @@ use Spatie\Permission\Contracts\Permission as PermissionContract;
 
 class PermissionServiceProvider extends ServiceProvider
 {
-    /**
-     * Bootstrap the application services.
-     *
-     * @param PermissionRegistrar $permissionLoader
-     */
     public function boot(PermissionRegistrar $permissionLoader)
     {
         $this->publishes([
-            __DIR__.'/../resources/config/laravel-permission.php' => $this->app->configPath().'/'.'laravel-permission.php',
+            __DIR__.'/../config/permission.php' => $this->app->configPath().'/permission.php',
         ], 'config');
 
         if (! class_exists('CreatePermissionTables')) {
-            // Publish the migration
             $timestamp = date('Y_m_d_His', time());
+
             $this->publishes([
-                __DIR__.'/../resources/migrations/create_permission_tables.php.stub' => $this->app->databasePath().'/migrations/'.$timestamp.'_create_permission_tables.php',
+                __DIR__.'/../database/migrations/create_permission_tables.php.stub' => $this->app->databasePath()."/migrations/{$timestamp}_create_permission_tables.php",
             ], 'migrations');
         }
 
-        $this->mergeConfigFrom(
-            __DIR__.'/../resources/config/laravel-permission.php',
-            'laravel-permission'
-        );
         $this->registerModelBindings();
 
         $permissionLoader->registerPermissions();
     }
 
-    /**
-     * Register the application services.
-     */
     public function register()
     {
+        $this->mergeConfigFrom(
+            __DIR__.'/../config/permission.php',
+            'permission'
+        );
+
         $this->registerBladeExtensions();
     }
 
-    /**
-     * Bind the Permission and Role model into the IoC.
-     */
     protected function registerModelBindings()
     {
-        $config = $this->app->config['laravel-permission.models'];
+        $config = $this->app->config['permission.models'];
 
         $this->app->bind(PermissionContract::class, $config['permission']);
         $this->app->bind(RoleContract::class, $config['role']);
     }
 
-    /**
-     * Register the blade extensions.
-     */
     protected function registerBladeExtensions()
     {
         $this->app->afterResolving('blade.compiler', function (BladeCompiler $bladeCompiler) {
-            $bladeCompiler->directive('role', function ($role) {
-                return "<?php if(auth()->check() && auth()->user()->hasRole({$role})): ?>";
+            $bladeCompiler->directive('role', function ($arguments) {
+                list($role, $guard) = explode(',', $arguments.',');
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasRole({$role})): ?>";
             });
             $bladeCompiler->directive('endrole', function () {
                 return '<?php endif; ?>';
             });
 
-            $bladeCompiler->directive('hasrole', function ($role) {
-                return "<?php if(auth()->check() && auth()->user()->hasRole({$role})): ?>";
+            $bladeCompiler->directive('hasrole', function ($arguments) {
+                list($role, $guard) = explode(',', $arguments.',');
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasRole({$role})): ?>";
             });
             $bladeCompiler->directive('endhasrole', function () {
                 return '<?php endif; ?>';
             });
 
-            $bladeCompiler->directive('hasanyrole', function ($roles) {
-                return "<?php if(auth()->check() && auth()->user()->hasAnyRole({$roles})): ?>";
+            $bladeCompiler->directive('hasanyrole', function ($arguments) {
+                list($roles, $guard) = explode(',', $arguments.',');
+                $roles = $this->convertPipeToArray($roles);
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasAnyRole({$roles})): ?>";
             });
             $bladeCompiler->directive('endhasanyrole', function () {
                 return '<?php endif; ?>';
             });
 
-            $bladeCompiler->directive('hasallroles', function ($roles) {
-                return "<?php if(auth()->check() && auth()->user()->hasAllRoles({$roles})): ?>";
+            $bladeCompiler->directive('hasallroles', function ($arguments) {
+                list($roles, $guard) = explode(',', $arguments.',');
+                $roles = $this->convertPipeToArray($roles);
+
+                return "<?php if(auth({$guard})->check() && auth({$guard})->user()->hasAllRoles({$roles})): ?>";
             });
             $bladeCompiler->directive('endhasallroles', function () {
                 return '<?php endif; ?>';
             });
         });
+    }
+
+    public function convertPipeToArray(string $pipeString)
+    {
+        $pipeString = trim($pipeString);
+
+        if (strlen($pipeString) <= 2) {
+            return $pipeString;
+        }
+
+        $quoteCharacter = substr($pipeString, 0, 1);
+
+        if (! in_array($quoteCharacter, ["'", '"'])) {
+            return $pipeString;
+        }
+
+        $endCharacter = substr($quoteCharacter, -1, 1);
+
+        if ($quoteCharacter !== $endCharacter) {
+            return $pipeString;
+        }
+
+        $roleString = '['.implode($quoteCharacter.','.$quoteCharacter, explode('|', $pipeString)).']';
+
+        return $roleString;
     }
 }

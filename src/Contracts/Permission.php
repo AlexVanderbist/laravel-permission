@@ -2,6 +2,8 @@
 
 namespace Spatie\Permission\Contracts;
 
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
 interface Permission
 {
     /**
@@ -9,21 +11,17 @@ interface Permission
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
-    public function roles();
-
-    /**
-     * A permission can be applied to users.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
-     */
-    public function users();
+    public function roles(): BelongsToMany;
 
     /**
      * Find a permission by its name.
      *
      * @param string $name
+     * @param string|null $guardName
      *
-     * @throws PermissionDoesNotExist
+     * @throws \Spatie\Permission\Exceptions\PermissionDoesNotExist
+     *
+     * @return Permission
      */
-    public static function findByName($name);
+    public static function findByName(string $name, $guardName): Permission;
 }

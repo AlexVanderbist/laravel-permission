@@ -3,6 +3,8 @@
 namespace Spatie\Permission\Test;
 
 use Spatie\Permission\Contracts\Role;
+use Spatie\Permission\Exceptions\RoleDoesNotExist;
+use Spatie\Permission\Exceptions\GuardDoesNotMatch;
 use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 
 class HasRolesTest extends TestCase
@@ -28,6 +30,14 @@ class HasRolesTest extends TestCase
     }
 
     /** @test */
+    public function it_can_assign_a_role_using_an_object()
+    {
+        $this->testUser->assignRole($this->testUserRole);
+
+        $this->assertTrue($this->testUser->hasRole($this->testUserRole));
+    }
+
+    /** @test */
     public function it_can_assign_multiple_roles_at_once()
     {
         $this->testUser->assignRole('testRole', 'testRole2');
@@ -45,6 +55,30 @@ class HasRolesTest extends TestCase
         $this->assertTrue($this->testUser->hasRole('testRole'));
 
         $this->assertTrue($this->testUser->hasRole('testRole2'));
+    }
+
+    /** @test */
+    public function it_throws_an_exception_when_assigning_a_role_that_does_not_exist()
+    {
+        $this->expectException(RoleDoesNotExist::class);
+
+        $this->testUser->assignRole('evil-emperor');
+    }
+
+    /** @test */
+    public function it_can_only_assign_roles_from_the_correct_guard()
+    {
+        $this->expectException(RoleDoesNotExist::class);
+
+        $this->testUser->assignRole('testAdminRole');
+    }
+
+    /** @test */
+    public function it_throws_an_exception_when_assigning_a_role_from_a_different_guard()
+    {
+        $this->expectException(GuardDoesNotMatch::class);
+
+        $this->testUser->assignRole($this->testAdminRole);
     }
 
     /** @test */
@@ -94,13 +128,15 @@ class HasRolesTest extends TestCase
     }
 
     /** @test */
-    public function it_can_assign_a_role_using_an_object()
+    public function it_throws_an_exception_when_syncing_a_role_from_another_guard()
     {
-        $this->testUser->assignRole($this->testRole);
+        $this->expectException(RoleDoesNotExist::class);
 
-        $this->refreshTestUser();
+        $this->testUser->syncRoles('testRole', 'testAdminRole');
 
-        $this->assertTrue($this->testUser->hasRole($this->testRole));
+        $this->expectException(GuardDoesNotMatch::class);
+
+        $this->testUser->syncRoles('testRole', $this->testAdminRole);
     }
 
     /** @test */
@@ -121,10 +157,10 @@ class HasRolesTest extends TestCase
     {
         $user1 = User::create(['email' => 'user1@test.com']);
         $user2 = User::create(['email' => 'user2@test.com']);
-        $user1->assignRole($this->testRole);
+        $user1->assignRole($this->testUserRole);
         $user2->assignRole('testRole2');
 
-        $scopedUsers1 = User::role([$this->testRole])->get();
+        $scopedUsers1 = User::role([$this->testUserRole])->get();
         $scopedUsers2 = User::role(['testRole', 'testRole2'])->get();
 
         $this->assertEquals($scopedUsers1->count(), 1);
@@ -136,10 +172,10 @@ class HasRolesTest extends TestCase
     {
         $user1 = User::create(['email' => 'user1@test.com']);
         $user2 = User::create(['email' => 'user2@test.com']);
-        $user1->assignRole($this->testRole);
+        $user1->assignRole($this->testUserRole);
         $user2->assignRole('testRole2');
 
-        $scopedUsers1 = User::role([$this->testRole])->get();
+        $scopedUsers1 = User::role([$this->testUserRole])->get();
         $scopedUsers2 = User::role(collect(['testRole', 'testRole2']))->get();
 
         $this->assertEquals($scopedUsers1->count(), 1);
@@ -151,12 +187,24 @@ class HasRolesTest extends TestCase
     {
         $user1 = User::create(['email' => 'user1@test.com']);
         $user2 = User::create(['email' => 'user2@test.com']);
-        $user1->assignRole($this->testRole);
+        $user1->assignRole($this->testUserRole);
         $user2->assignRole('testRole2');
 
-        $scopedUsers = User::role($this->testRole)->get();
+        $scopedUsers = User::role($this->testUserRole)->get();
 
         $this->assertEquals($scopedUsers->count(), 1);
+    }
+
+    /** @test */
+    public function it_throws_an_exception_when_trying_to_scope_a_role_from_another_guard()
+    {
+        $this->expectException(RoleDoesNotExist::class);
+
+        User::role('testAdminRole')->get();
+
+        $this->expectException(GuardDoesNotMatch::class);
+
+        User::role($this->testAdminRole)->get();
     }
 
     /** @test */
@@ -168,7 +216,7 @@ class HasRolesTest extends TestCase
 
         $this->assertFalse($this->testUser->hasRole($roleModel->all()));
 
-        $this->testUser->assignRole($this->testRole);
+        $this->testUser->assignRole($this->testUserRole);
 
         $this->refreshTestUser();
 
@@ -200,7 +248,7 @@ class HasRolesTest extends TestCase
 
         $roleModel->create(['name' => 'second role']);
 
-        $this->testUser->assignRole($this->testRole);
+        $this->testUser->assignRole($this->testUserRole);
 
         $this->refreshTestUser();
 
@@ -214,9 +262,41 @@ class HasRolesTest extends TestCase
     }
 
     /** @test */
+    public function it_can_determine_that_a_user_does_not_have_a_role_from_another_guard()
+    {
+        $this->assertFalse($this->testUser->hasRole('testAdminRole'));
+
+        $this->assertFalse($this->testUser->hasRole($this->testAdminRole));
+
+        $this->testUser->assignRole('testRole');
+
+        $this->refreshTestUser();
+
+        $this->assertTrue($this->testUser->hasAnyRole(['testRole', 'testAdminRole']));
+
+        $this->assertFalse($this->testUser->hasAnyRole('testAdminRole', $this->testAdminRole));
+    }
+
+    /** @test */
     public function it_can_determine_that_the_user_does_not_have_a_permission()
     {
         $this->assertFalse($this->testUser->hasPermissionTo('edit-articles'));
+    }
+
+    /** @test */
+    public function it_throws_an_exception_when_the_permission_does_not_exist()
+    {
+        $this->expectException(PermissionDoesNotExist::class);
+
+        $this->testUser->hasPermissionTo('does-not-exist');
+    }
+
+    /** @test */
+    public function it_throws_an_exception_when_the_permission_does_not_exist_for_this_guard()
+    {
+        $this->expectException(PermissionDoesNotExist::class);
+
+        $this->testUser->hasPermissionTo('admin-permission');
     }
 
     /** @test */
@@ -228,123 +308,33 @@ class HasRolesTest extends TestCase
     }
 
     /** @test */
-    public function it_can_determine_that_the_user_does_not_have_a_permission_even_with_non_existing_permissions()
+    public function it_can_determine_that_the_user_has_any_of_the_permissions_directly()
     {
-        $this->setExpectedException(PermissionDoesNotExist::class);
+        $this->assertFalse($this->testUser->hasAnyPermission('edit-articles'));
 
-        $this->assertFalse($this->testUser->hasPermissionTo('this permission does not exists'));
-    }
-
-    /** @test */
-    public function it_can_assign_a_permission_to_a_role()
-    {
-        $this->testRole->givePermissionTo('edit-articles');
-
-        $this->testUser->assignRole('testRole');
-
-        $this->assertTrue($this->testUser->hasPermissionTo('edit-articles'));
-    }
-
-    /** @test */
-    public function it_can_assign_multiple_permissions_to_a_role_using_an_array()
-    {
-        $this->testRole->givePermissionTo(['edit-articles', 'edit-news']);
-
-        $this->testUser->assignRole('testRole');
-
-        $this->assertTrue($this->testUser->hasPermissionTo('edit-articles'));
-        $this->assertTrue($this->testUser->hasPermissionTo('edit-news'));
-    }
-
-    /** @test */
-    public function it_can_assign_multiple_permissions_to_a_role_using_multiple_arguments()
-    {
-        $this->testRole->givePermissionTo('edit-articles', 'edit-news');
-
-        $this->testUser->assignRole('testRole');
-
-        $this->assertTrue($this->testUser->hasPermissionTo('edit-articles'));
-        $this->assertTrue($this->testUser->hasPermissionTo('edit-news'));
-    }
-
-    /** @test */
-    public function it_can_sync_permissions_on_a_role()
-    {
-        $this->testRole->givePermissionTo('edit-articles');
-
-        $this->testRole->syncPermissions('edit-news');
-
-        $this->testUser->assignRole('testRole');
-
-        $this->assertFalse($this->testUser->hasPermissionTo('edit-articles'));
-
-        $this->assertTrue($this->testUser->hasPermissionTo('edit-news'));
-    }
-
-    /** @test */
-    public function it_will_remove_all_permission_on_a_role_when_passing_an_empty_array_to_sync_permissions()
-    {
-        $this->testRole->givePermissionTo('edit-articles');
-
-        $this->testRole->givePermissionTo('edit-news');
-
-        $this->testRole->syncPermissions([]);
-
-        $this->testUser->assignRole('testRole');
-
-        $this->assertFalse($this->testUser->hasPermissionTo('edit-articles'));
-
-        $this->assertFalse($this->testUser->hasPermissionTo('edit-news'));
-    }
-
-    /** @test */
-    public function it_can_revoke_a_permission_from_a_role()
-    {
-        $this->testRole->givePermissionTo('edit-articles');
-
-        $this->testUser->assignRole('testRole');
-
-        $this->assertTrue($this->testUser->hasPermissionTo('edit-articles'));
-
-        $this->testRole->revokePermissionTo('edit-articles');
-
-        $this->assertFalse($this->testUser->hasPermissionTo('edit-articles'));
-    }
-
-    /** @test */
-    public function it_can_assign_a_permission_to_a_role_using_objects()
-    {
-        $this->testRole->givePermissionTo($this->testPermission);
-
-        $this->testUser->assignRole($this->testRole);
-
-        $this->assertTrue($this->testUser->hasPermissionTo($this->testPermission));
-    }
-
-    /** @test */
-    public function it_can_assign_a_permission_to_a_user()
-    {
-        $this->testUser->givePermissionTo($this->testPermission);
+        $this->testUser->givePermissionTo('edit-articles');
 
         $this->refreshTestUser();
 
-        $this->assertTrue($this->testUser->hasPermissionTo($this->testPermission));
+        $this->assertTrue($this->testUser->hasAnyPermission('edit-news', 'edit-articles'));
+
+        $this->testUser->givePermissionTo('edit-news');
+
+        $this->refreshTestUser();
+
+        $this->testUser->revokePermissionTo($this->testUserPermission);
+
+        $this->assertTrue($this->testUser->hasAnyPermission('edit-articles', 'edit-news'));
     }
 
     /** @test */
-    public function it_can_revoke_a_permission_from_a_user()
+    public function it_can_determine_that_the_user_has_any_of_the_permissions_via_role()
     {
-        $this->testUser->givePermissionTo($this->testPermission);
+        $this->testUserRole->givePermissionTo('edit-articles');
 
-        $this->refreshTestUser();
+        $this->testUser->assignRole('testRole');
 
-        $this->assertTrue($this->testUser->hasPermissionTo($this->testPermission));
-
-        $this->testUser->revokePermissionTo($this->testPermission);
-
-        $this->refreshTestUser();
-
-        $this->assertFalse($this->testUser->hasPermissionTo($this->testPermission));
+        $this->assertTrue($this->testUser->hasAnyPermission('edit-news', 'edit-articles'));
     }
 
     /** @test */
@@ -358,30 +348,37 @@ class HasRolesTest extends TestCase
         $this->assertFalse($this->testUser->hasDirectPermission('edit-articles'));
 
         $this->testUser->assignRole('testRole');
-        $this->testRole->givePermissionTo('edit-articles');
+        $this->testUserRole->givePermissionTo('edit-articles');
         $this->refreshTestUser();
         $this->assertFalse($this->testUser->hasDirectPermission('edit-articles'));
     }
 
-    /**
-     * @test
-     *
-     * @deprecated
-     */
-    public function it_can_check_permissions_with_the_deprecated_has_permission_method()
+    /** @test */
+    public function it_can_list_all_the_permissions_via_his_roles()
     {
-        $this->assertSame(
-            $this->testUser->hasPermissionTo($this->testPermission),
-            $this->testUser->hasPermission($this->testPermission)
+        $roleModel = app(Role::class);
+        $roleModel->findByName('testRole2')->givePermissionTo('edit-news');
+
+        $this->testUserRole->givePermissionTo('edit-articles');
+        $this->testUser->assignRole('testRole', 'testRole2');
+
+        $this->assertEquals(
+            collect(['edit-articles', 'edit-news']),
+            $this->testUser->getPermissionsViaRoles()->pluck('name')
         );
+    }
 
-        $this->testUser->givePermissionTo($this->testPermission);
+    /** @test */
+    public function it_can_list_all_the_coupled_permissions_both_directly_and_via_roles()
+    {
+        $this->testUser->givePermissionTo('edit-news');
 
-        $this->refreshTestUser();
+        $this->testUserRole->givePermissionTo('edit-articles');
+        $this->testUser->assignRole('testRole');
 
-        $this->assertSame(
-            $this->testUser->hasPermissionTo($this->testPermission),
-            $this->testUser->hasPermission($this->testPermission)
+        $this->assertEquals(
+            collect(['edit-articles', 'edit-news']),
+            $this->testUser->getAllPermissions()->pluck('name')
         );
     }
 }

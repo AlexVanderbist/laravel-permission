@@ -2,6 +2,8 @@
 
 namespace Spatie\Permission\Contracts;
 
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+
 interface Role
 {
     /**
@@ -9,23 +11,19 @@ interface Role
      *
      * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
      */
-    public function permissions();
+    public function permissions(): BelongsToMany;
 
     /**
-     * A role may be assigned to various users.
-     *
-     * @return \Illuminate\Database\Eloquent\Relations\BelongsToMany
-     */
-    public function users();
-
-    /**
-     * Find a role by its name.
+     * Find a role by its name and guard name.
      *
      * @param string $name
+     * @param string|null $guardName
+     *
+     * @return \Spatie\Permission\Contracts\Role
      *
      * @throws RoleDoesNotExist
      */
-    public static function findByName($name);
+    public static function findByName(string $name, $guardName): Role;
 
     /**
      * Determine if the user may perform the given permission.
@@ -34,5 +32,5 @@ interface Role
      *
      * @return bool
      */
-    public function hasPermissionTo($permission);
+    public function hasPermissionTo($permission): bool;
 }
